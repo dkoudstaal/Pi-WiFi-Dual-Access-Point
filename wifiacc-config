@@ -1,0 +1,99 @@
+#!/bin/bash
+# 
+#
+if [ $EUID -ne 0 ]; then
+  echo "$0 is not running as root. Try using sudo."
+  exit 2
+fi
+
+USER=${SUDO_USER:-$(who -m | awk '{ print $1 }')}
+
+SCREEN_TITLE=$(cat /proc/device-tree/model | tr '\0' '\n' | awk '{print$0}') #prevent null byte error end of line
+HOSTAPD_2G=/etc/hostapd/hostapd.conf
+HOSTAPD_5G="/etc/hostapd/hostapd-5g.conf"
+
+sed -i '/[[:space:]]\+$/s///' $HOSTAPD_2G
+sed -i '/[[:space:]]\+$/s///' $HOSTAPD_5G
+
+
+
+# Functions
+do_wifi_country_code() {
+  country_code_2g=$(fgrep country_code /etc/hostapd/hostapd.conf | awk -F'=' '{print$2}')
+  country_code_5g=$(fgrep country_code /etc/hostapd/hostapd-5g.conf | awk -F'=' '{print$2}')
+  oIFS="$IFS"
+  code_length=$(fgrep country_code /etc/hostapd/hostapd.conf | awk -F'=' '{print length($2)}')
+  #whiptail --title "Pi Dual WiFi Access Point Setup" --backtitle "$SCREEN_TITLE" --msgbox "Country code is ${country_code_2g}\nLength is ${code_length}" 8 50
+  code_list=$(cat /usr/share/zoneinfo/iso3166.tab | tail -n +26 | tr '\t' '/' | tr '\n' '/')
+  IFS='/'
+  
+  if [[ $code_length != 2 ]]; then
+    new_country_code=$(whiptail --menu "The country codes in the configuration files are not approved codes.\nSelect the country in which this Raspberry Pi is to be used." 20 70 10 ${code_list} 3>&1 1>&2 2>&3)
+    sed -i "s/country_code=$country_code_2g/country_code=$new_country_code/" "$HOSTAPD_2G"
+    sed -i "s/country_code=$country_code_5g/country_code=$new_country_code/" "$HOSTAPD_5G"   
+  elif [[ $country_code_2g != $country_code_5g ]]; then
+    new_country_code=$(whiptail --menu "The country codes for both configuration files did not match.\nSelect the country in which this Raspberry Pi is to be used." 20 70 10 ${code_list} 3>&1 1>&2 2>&3)
+    sed -i "s/country_code=$country_code_2g/country_code=$new_country_code/" "$HOSTAPD_2G"
+    sed -i "s/country_code=$country_code_5g/country_code=$new_country_code/" "$HOSTAPD_5G"
+  else
+    whiptail --title "Pi Dual WiFi Access Point Setup" --backtitle "$SCREEN_TITLE" --yesno "Country Code is set to ${country_code_2g}.\nDo you want to enter a new country code?" 10 60
+    ans=$?
+    if [[ $ans -eq 0 ]]; then
+      new_country_code=$(whiptail --title "Select WiFi Country Code" --backtitle "$SCREEN_TITLE" --menu "Select the country in which the Pi is to be used." 20 70 10 ${code_list} 3>&1 1>&2 2>&3)
+      if [[ $? -eq 0 ]]; then
+       sed -i "s/country_code=$country_code_2g/country_code=$new_country_code/" "$HOSTAPD_2G"
+       sed -i "s/country_code=$country_code_5g/country_code=$new_country_code/" "$HOSTAPD_5G"
+      fi
+    else 
+      whiptail --title "Pi Dual WiFi Access Point Setup" --backtitle "$SCREEN_TITLE" --msgbox "Country code is ${country_code_2g}\nLength is ${code_length}" 8 50
+    fi
+  fi
+      
+  #sed -i "s/country_code=$country_code_2g/country_code=$new_country_code/" "$HOSTAPD_2G"
+  #sed -i "s/country_code=$country_code_5g/country_code=$new_country_code/" "$HOSTAPD_5G"
+  #country_code_2g=$(fgrep country_code /etc/hostapd/hostapd.conf | awk -F'=' '{print$2}')
+  #country_code_5g=$(fgrep country_code /etc/hostapd/hostapd-5g.conf | awk -F'=' '{print$2}')
+  IFS="oIFS"
+}
+
+get_instructions() {
+  whiptail --title "Pi Dual WiFi Access Point Setup" --backtitle "$SCREEN_TITLE" --msgbox "Instructiond to follw" 8 50
+}
+
+# start of main menu
+#whiptail --title "Pi Dual WiFi Access Point Setup" --backtitle "$SCREEN_TITLE" --msgbox "The country code for 2.4 GHz is set at ${country_code_2g}\nThe country code for 5 GHz is set at ${country_code_5g}" 8 50
+
+while true;
+  do
+    choice=$(whiptail --title "Pi Dual WiFi Access Point Setup" --backtitle "$SCREEN_TITLE" --menu "instructions to follow" --cancel-button Finish --ok-button Select 20 60 6 \
+    "1 Instructions" " Settings and configuration." \
+    "2 WiFi" " Set WiFi Country Code." \
+    "3 WLAN" " Set IP Addresses for WLAN0 and WLAN1" \
+    "4 Dynamic IP" " Set IP ranges for connected devices." \
+    "5 Info" " About this tool" \
+    "6 Exit" " Close this window" 3>&1 1>&2 2>&3)
+    return=$?
+    if [ $return -eq 1 ] || [ $return -eq 255 ]; then
+    clear
+		exit
+    elif [ $return -eq 0 ]; then
+      case $choice in
+        1\ *) get_instructions 
+        ;;
+        2\ *) do_wifi_country_code
+        ;;
+        "3")
+        ;;
+        "4")
+        ;;
+        "5")
+        ;;
+        6\ *) clear
+              exit
+        ;;
+      esac
+    fi
+  done
+exit
+clear
+  
